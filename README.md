@@ -8,7 +8,7 @@
 
 Pick your media folders. LoungeCat finds titles and artwork, organizes your collection, and makes it easy to watch or listen on your devices.
 
-### [Download LoungeCat](https://shnerplabs.github.io/loungecat-releases/)
+### [Download LoungeCat](https://shnerplabs.com/downloads/)
 
 [Website](https://shnerplabs.com) | [Setup guide](https://shnerplabs.com/get-started) | [Linux and NAS](https://shnerplabs.com/linux-server) | [Latest release](https://github.com/ShnerpLabs/loungecat-releases/releases/latest)
 
@@ -19,6 +19,21 @@ Pick your media folders. LoungeCat finds titles and artwork, organizes your coll
 3. **Connect your devices.** Use a browser or install a client for your phone or another computer.
 
 Your collection stays in its folders. The computer running your server needs to stay on while other devices use it.
+
+## Choose where your server lives
+
+| Server | Setup |
+| --- | --- |
+| Windows or Mac | [Server installers](https://shnerplabs.com/downloads/) |
+| Debian or Ubuntu | [Native packages and direct Linux setup](https://shnerplabs.com/linux-server#packages) |
+| Fedora, RHEL, Rocky or Alma | [RPM package options](https://shnerplabs.com/linux-server#packages) |
+| Docker on x86-64 or ARM64 | [Standard container setup](https://shnerplabs.com/linux-server#docker) |
+| NVIDIA Linux server | [NVIDIA image and hardware requirements](https://shnerplabs.com/linux-server#docker) |
+| Synology, QNAP, Unraid or TrueNAS SCALE | [NAS installation paths and templates](https://shnerplabs.com/linux-server#nas) |
+
+The setup kit works with the current portable release. Native package downloads appear automatically as they are published; the guide also checks whether each prebuilt container image is publicly available. Keep your persistent config folder when updating.
+
+Windows, Mac, Android and Linux clients, plus Roku, LG webOS and Samsung Tizen packages, are on the [downloads page](https://shnerplabs.com/downloads/). TV packages use their platform's developer installation process.
 
 ## Everything on your shelves, easy to find.
 
@@ -66,10 +81,10 @@ Subtitles, audio-track selection, fullscreen and quality controls keep you in ch
 
 **Does my collection move or get uploaded?** Media stays in your folders. Online matching and artwork lookup contact metadata providers. Other devices stream from your server.
 
-**Is the Linux server ready for every NAS?** No. The headless setup kit is experimental. Check hardware requirements and keep your existing data folder when updating.
+**Which NAS can run LoungeCat?** Use a compatible Linux container host or a supported Linux installation. Check the [hardware and platform guide](https://shnerplabs.com/linux-server); a NAS brand alone does not determine compatibility. Keep your existing config and data folders when updating.
 
 **What do I download?** Use the platform links on the download page. Files ending in `.sig` are update-verification files, not installers. Existing installer filenames remain compatible while the app name changes.
 
 **Need help?** [Start with the setup guide](https://shnerplabs.com/get-started), [compare with Plex](https://shnerplabs.com/loungecat-vs-plex), or [report a problem](https://github.com/ShnerpLabs/loungecat-releases/issues).
 
-### [Make yourself at home. Get LoungeCat.](https://shnerplabs.github.io/loungecat-releases/)
+### [Make yourself at home. Get LoungeCat.](https://shnerplabs.com/downloads/)
