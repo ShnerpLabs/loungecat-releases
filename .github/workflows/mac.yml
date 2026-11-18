@@ -70,6 +70,19 @@ jobs:
       - name: Client launch and update regression tests
         run: python3 tests/test_mac_client.py
 
+      - name: Compilers (copies of the app's Pythons with Nuitka; the ones that ship stay as they are)
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            mkdir -p build/native/$arch && cp -R build/py/$arch/python build/native/$arch/
+          done
+          build/native/arm64/python/bin/python3 -m pip install -q "nuitka>=2.7,<3" ordered-set zstandard
+          arch -x86_64 build/native/x86_64/python/bin/python3 -m pip install -q "nuitka>=2.7,<3" ordered-set zstandard
+          echo "LOUNGECAT_NATIVE_ARM64=$PWD/build/native/arm64/python/bin/python3" >> "$GITHUB_ENV"
+          echo "LOUNGECAT_NATIVE_X86_64=$PWD/build/native/x86_64/python/bin/python3" >> "$GITHUB_ENV"
+          echo "LOUNGECAT_RELEASE=1" >> "$GITHUB_ENV"
+          npm --version
+
       - name: Build Loungecat.app
         run: |
           set -euo pipefail
@@ -80,25 +93,28 @@ jobs:
         run: |
           set -euo pipefail
           app=dist/mac/Loungecat.app
-          codesign --verify --deep --strict "$app" && echo "PASS: signed (ad hoc)"
+          codesign --verify --deep --strict "$app"; echo "PASS: signed (ad hoc)"
+          left=$(find "$app" -name "*.py" -path "*Resources/client/*" -not -path "*/python-*" -exec sh -c 'head -1 "$1" | grep -q "^# Starts Loungecat.s compiled" || echo "$1"' _ {} \;)
+          if [ -n "$left" ]; then echo "FAIL: source in the app: $left"; exit 1; fi
+          echo "PASS: no source in the app (machine code; launchers only)"
           # A real program as the app (not a script): macOS only asks for Local Network access for an app it can name.
-          file "$app/Contents/MacOS/Loungecat" | grep -q "Mach-O universal binary" && echo "PASS: the app's program is a native launcher (Apple Silicon and Intel)"
+          file "$app/Contents/MacOS/Loungecat" | grep -q "Mach-O universal binary"; echo "PASS: the app's program is a native launcher (Apple Silicon and Intel)"
           test -x "$app/Contents/Resources/launch.sh"
-          "$app/Contents/MacOS/Loungecat" --list && echo "PASS: the app runs its client (Apple Silicon)"
+          "$app/Contents/MacOS/Loungecat" --list; echo "PASS: the app runs its client (Apple Silicon)"
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
             arch -x86_64 "$app/Contents/Resources/python-x86_64/bin/python3" -B -E -s -c "import ssl, ctypes, json, sqlite3; print('PASS: the Intel Python works (under Rosetta)')"
           else
-            file "$app/Contents/Resources/python-x86_64/bin/python3.12" | grep -q x86_64 && echo "PASS: the Intel Python is there (no Rosetta here to run it)"
+            file "$app/Contents/Resources/python-x86_64/bin/python3.12" | grep -q x86_64; echo "PASS: the Intel Python is there (no Rosetta here to run it)"
           fi
           "$app/Contents/Resources/python-arm64/bin/python3" -B -E -s installer/mac_selftest.py "$app" dist/mac/menu-bar.png
           # The whole app, opened the way Finder opens it: in the menu bar, and quits when asked.
           open "$app" --args --background
           sleep 8
-          pgrep -f "Resources/client/loungecat_client_boot.py" && echo "PASS: opened, and running in the menu bar"
+          pgrep -f "Resources/client/loungecat_client_boot.py"; echo "PASS: opened, and running in the menu bar"
           screencapture -x dist/mac/opened.png
           "$app/Contents/MacOS/Loungecat" --quit-running
           sleep 2
-          ! pgrep -f "Resources/client/loungecat_client_boot.py" && echo "PASS: Quit closes it"
+          if pgrep -f "Resources/client/loungecat_client_boot.py"; then echo "FAIL: Quit closes it"; exit 1; fi; echo "PASS: Quit closes it"
           tail -20 "$HOME/Library/Application Support/Loungecat Client/client.log" || true
           # Opened the way a person opens it (double-click, no arguments): a window, with the client's own screens in it.
           log="$HOME/Library/Application Support/Loungecat Client/client.log"
@@ -106,13 +122,13 @@ jobs:
           for i in $(seq 1 40); do grep -q "window shown" "$log" 2>/dev/null && break; sleep 1; done
           sleep 6
           screencapture -x dist/mac/window.png || true
-          grep "window shown" "$log" && echo "PASS: opening it shows its window"
-          ! grep -q "menu bar change failed" "$log" && echo "PASS: no failure putting up the window or the menu bar"
+          grep "window shown" "$log"; echo "PASS: opening it shows its window"
+          if grep -q "menu bar change failed" "$log"; then echo "FAIL: no failure putting up the window or the menu bar"; exit 1; fi; echo "PASS: no failure putting up the window or the menu bar"
           "$app/Contents/MacOS/Loungecat" --quit-running
           sleep 2
           tail -30 "$log" || true
-          codesign --verify --deep --strict "$app" && echo "PASS: launching did not change the signed bundle"
-          test -z "$(find "$app" -name __pycache__ -print -quit)" && echo "PASS: no bytecode written into the bundle"
+          codesign --verify --deep --strict "$app"; echo "PASS: launching did not change the signed bundle"
+          test -z "$(find "$app" -name __pycache__ -print -quit)"; echo "PASS: no bytecode written into the bundle"
 
       - name: Launch a client update and restart it using the bundled runtime
         run: |
@@ -132,7 +148,7 @@ jobs:
           for i in $(seq 1 20); do "$app/Contents/MacOS/Loungecat" --status && break; sleep 1; done
           "$app/Contents/MacOS/Loungecat" --status
           test "$("$app/Contents/MacOS/Loungecat" --version)" = 99.0.0
-          test ! -f "$update/.attempts" && echo "PASS: the updated client finished starting"
+          test ! -f "$update/.attempts"; echo "PASS: the updated client finished starting"
           "$app/Contents/MacOS/Loungecat" --quit-running
           sleep 2
           codesign --verify --deep --strict "$app"
@@ -143,16 +159,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/plain && cp dist/mac/LoungecatClientMac-*.zip build/plain/Loungecat-Mac.zip
+          export LOUNGECAT_SHA256="$(shasum -a 256 build/plain/Loungecat-Mac.zip | cut -d ' ' -f 1)"
+          # A download that isn't the file the release made is refused, and nothing is installed (security report 17 Nov).
+          mkdir -p build/tampered && cp build/plain/Loungecat-Mac.zip build/tampered/ && printf x >> build/tampered/Loungecat-Mac.zip
+          if LOUNGECAT_MAC_BASE="file://$PWD/build/tampered" LOUNGECAT_MAC_NO_OPEN=1 sh installer/install-mac.sh; then echo "FAIL: a tampered download was installed"; exit 1; fi
+          if test -e /Applications/Loungecat.app; then echo "FAIL: something was installed from a tampered download"; exit 1; fi
+          echo "PASS: a tampered download is refused, nothing installed"
+          if LOUNGECAT_SHA256= LOUNGECAT_MAC_BASE="file://$PWD/build/plain" LOUNGECAT_MAC_NO_OPEN=1 sh installer/install-mac.sh; then echo "FAIL: installed without a fingerprint"; exit 1; fi
+          echo "PASS: the script installs nothing without its release's fingerprint"
           LOUNGECAT_MAC_BASE="file://$PWD/build/plain" LOUNGECAT_MAC_NO_OPEN=1 sh installer/install-mac.sh
           app=/Applications/Loungecat.app
-          test -x "$app/Contents/MacOS/Loungecat" && echo "PASS: installed in Applications"
-          ! xattr -p com.apple.quarantine "$app" 2>/dev/null && echo "PASS: not marked as downloaded (macOS doesn't stop it)"
-          codesign --verify --deep --strict "$app" && echo "PASS: still signed"
-          "$app/Contents/MacOS/Loungecat" --list && echo "PASS: the installed app runs"
+          test -x "$app/Contents/MacOS/Loungecat"; echo "PASS: installed in Applications"
+          if xattr -p com.apple.quarantine "$app" 2>/dev/null; then echo "FAIL: not marked as downloaded (macOS doesn't stop it)"; exit 1; fi; echo "PASS: not marked as downloaded (macOS doesn't stop it)"
+          codesign --verify --deep --strict "$app"; echo "PASS: still signed"
+          "$app/Contents/MacOS/Loungecat" --list; echo "PASS: the installed app runs"
           LOUNGECAT_MAC_BASE="file://$PWD/build/plain" LOUNGECAT_MAC_NO_OPEN=1 sh installer/install-mac.sh
-          "$app/Contents/MacOS/Loungecat" --list && echo "PASS: installs over an older copy (an update the same way)"
+          "$app/Contents/MacOS/Loungecat" --list; echo "PASS: installs over an older copy (an update the same way)"
           LOUNGECAT_MAC_BASE="file://$PWD/build/plain" sh installer/install-mac.sh
-          "$app/Contents/MacOS/Loungecat" --status && echo "PASS: the installer verified a running client"
+          "$app/Contents/MacOS/Loungecat" --status; echo "PASS: the installer verified a running client"
           "$app/Contents/MacOS/Loungecat" --quit-running
           sleep 2
           codesign --verify --deep --strict "$app"
@@ -227,6 +251,19 @@ jobs:
           done
           ls -la tools/arm64 tools/x86_64
 
+      - name: Compilers for the server (copies of the app's Pythons with Nuitka; the ones that ship stay as they are)
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            mkdir -p build/native/$arch && cp -R build/py/$arch/python build/native/$arch/
+          done
+          build/native/arm64/python/bin/python3 -m pip install -q "nuitka>=2.7,<3" ordered-set zstandard
+          arch -x86_64 build/native/x86_64/python/bin/python3 -m pip install -q "nuitka>=2.7,<3" ordered-set zstandard
+          echo "LOUNGECAT_NATIVE_ARM64=$PWD/build/native/arm64/python/bin/python3" >> "$GITHUB_ENV"
+          echo "LOUNGECAT_NATIVE_X86_64=$PWD/build/native/x86_64/python/bin/python3" >> "$GITHUB_ENV"
+          echo "LOUNGECAT_RELEASE=1" >> "$GITHUB_ENV"
+          npm --version
+
       - name: Build Loungecat Server.app
         run: |
           set -euo pipefail
@@ -237,28 +274,31 @@ jobs:
         run: |
           set -euo pipefail
           app="dist/mac-server/Loungecat Server.app"
-          codesign --verify --deep --strict "$app" && echo "PASS: signed (ad hoc)"
+          codesign --verify --deep --strict "$app"; echo "PASS: signed (ad hoc)"
+          left=$(find "$app" -name "*.py" -path "*Resources/app/*" -not -path "*/python-*" -exec sh -c 'head -1 "$1" | grep -q "^# Starts Loungecat.s compiled" || echo "$1"' _ {} \;)
+          if [ -n "$left" ]; then echo "FAIL: source in the app: $left"; exit 1; fi
+          echo "PASS: no source in the app (machine code; launchers only)"
           res="$app/Contents/Resources"
           "$res/tools-arm64/ffmpeg" -hide_banner -version | head -1
           "$res/tools-arm64/fpcalc" -version
           PATH="$res/tools-arm64:$PATH" "$res/python-arm64/bin/python3" -B -E -s -c "import sys; sys.path.insert(0, sys.argv[1]); import loungecat_audio, loungecat_boot, loungecat_server; print('PASS: the server finds', loungecat_audio.tool('ffmpeg')); assert loungecat_server.INSTALL_ROOT, 'installed'; print('PASS: it knows it is installed; data in', loungecat_server.default_data_dir())" "$res/app/server"
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
-            arch -x86_64 "$res/tools-x86_64/ffmpeg" -hide_banner -version | head -1 && echo "PASS: the Intel FFmpeg works (under Rosetta)"
+            arch -x86_64 "$res/tools-x86_64/ffmpeg" -hide_banner -version | head -1; echo "PASS: the Intel FFmpeg works (under Rosetta)"
           fi
           # A short clip made by the app's own FFmpeg, in a library folder, to see it played.
           mkdir -p "$HOME/Movies/Loungecat Check"
           "$res/tools-arm64/ffmpeg" -v error -f lavfi -i testsrc=s=320x180:r=24 -f lavfi -i sine -t 4 -c:v libx264 -c:a aac "$HOME/Movies/Loungecat Check/Check Clip (2026).mp4"
           open "$app" --args --background
           for i in $(seq 1 30); do curl -fs http://127.0.0.1:8765/api/info >/dev/null && break; sleep 1; done
-          curl -fs http://127.0.0.1:8765/api/info && echo && echo "PASS: opened, and serving"
-          pgrep -f "loungecat_menubar.py" && echo "PASS: running in the menu bar"
-          test -f "$HOME/Library/LaunchAgents/com.shnerplabs.loungecat-server.plist" && echo "PASS: starts at login"
+          curl -fs http://127.0.0.1:8765/api/info; echo; echo "PASS: opened, and serving"
+          pgrep -f "loungecat_menubar.py"; echo "PASS: running in the menu bar"
+          test -f "$HOME/Library/LaunchAgents/com.shnerplabs.loungecat-server.plist"; echo "PASS: starts at login"
           curl -fs -X POST -H "X-Loungecat: 1" -H "Content-Type: application/json" -d "{\"folder\": \"$HOME/Movies/Loungecat Check\"}" http://127.0.0.1:8765/api/library >/dev/null
           curl -fs http://127.0.0.1:8765/api/library | python3 -c "import json,sys; d=json.load(sys.stdin); n=sum(f['files'] for f in d['folders']); assert n == 1, d; print('PASS: the library folder is read')"
           screencapture -x dist/mac-server/opened.png
           "$app/Contents/MacOS/Loungecat Server" --quit
           sleep 2
-          ! pgrep -f "loungecat_menubar.py" && echo "PASS: Quit closes it"
+          if pgrep -f "loungecat_menubar.py"; then echo "FAIL: Quit closes it"; exit 1; fi; echo "PASS: Quit closes it"
           tail -20 "$HOME/Library/Application Support/Loungecat/loungecat.log" || true
 
       - uses: actions/upload-artifact@v4
