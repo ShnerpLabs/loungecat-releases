@@ -141,13 +141,16 @@ jobs:
           import os, pathlib, re
           folder = pathlib.Path(os.environ["UPDATE_CLIENT"])
           script = folder / "loungecat_client.py"
-          script.write_text(re.sub(r'^VERSION = ".*"', 'VERSION = "99.0.0"', script.read_text(), flags=re.M))
+          # Compiled, the version an update is chosen by is its launcher's line; this one also leaves a mark when it runs.
+          text = re.sub(r'^VERSION = ".*"', 'VERSION = "99.0.0"', script.read_text(), flags=re.M)
+          text = text.replace("import os, sys", "import os, sys\nopen(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.ran'), 'w').write('99.0.0')", 1)
+          script.write_text(text)
           (folder / ".ready").write_text("99.0.0")
           PY
           open "$app" --args --background
           for i in $(seq 1 20); do "$app/Contents/MacOS/Loungecat" --status && break; sleep 1; done
           "$app/Contents/MacOS/Loungecat" --status
-          test "$("$app/Contents/MacOS/Loungecat" --version)" = 99.0.0
+          test -f "$update/.ran"; echo "PASS: the update's copy is the one running"
           test ! -f "$update/.attempts"; echo "PASS: the updated client finished starting"
           "$app/Contents/MacOS/Loungecat" --quit-running
           sleep 2
